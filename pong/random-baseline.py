@@ -18,7 +18,7 @@ def main():
                 break
             t += 1
         rewards.append(tot_reward)
-    print(sum(rewards)/len(rewards))
+    print("Mean reward: ", sum(rewards)/len(rewards))
     env.close()
 
 if __name__ == "__main__":
