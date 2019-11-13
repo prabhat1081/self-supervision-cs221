@@ -18,7 +18,11 @@ from baselines.deepq.utils import ObservationInput
 
 from baselines.common.tf_util import get_session
 from baselines.deepq.models import build_q_func
+from PIL import Image
 
+def save_image(img, fname) :
+    img = Image.fromarray(img.astype(np.uint8))
+    img.save(fname)
 
 class ActWrapper(object):
     def __init__(self, act, act_params):
@@ -198,7 +202,7 @@ def learn(env,
     def make_obs_ph(name):
         return ObservationInput(observation_space, name=name)
 
-    act, train, update_target, debug = deepq.build_train(
+    act, train, update_target, debug, real_fake_train = deepq.build_train(
         make_obs_ph=make_obs_ph,
         q_func=q_func,
         num_actions=env.action_space.n,
@@ -279,6 +283,7 @@ def learn(env,
             env_action = action
             reset = False
             new_obs, rew, done, _ = env.step(env_action)
+            
             # Store transition in the replay buffer.
             replay_buffer.add(obs, action, rew, new_obs, float(done))
             obs = new_obs
@@ -297,7 +302,45 @@ def learn(env,
                 else:
                     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
                     weights, batch_idxes = np.ones_like(rewards), None
+
                 td_errors = train(obses_t, actions, rewards, obses_tp1, dones, weights)
+                
+                obses_t_reshaped = np.array(np.transpose(obses_t, (0, 3, 1, 2)), copy = False)
+                labels_self = []
+                for i in range(len(obses_t_reshaped)) :
+                    if i %2 == 0 :
+                        indices = np.random.permutation(4)
+                        if (indices == np.arange(4)).all() or (indices == np.arange(4)[::-1]).all():
+                            labels_self.append(1)
+                        else :
+                            labels_self.append(0)
+                    else :
+                        indices = np.arange(4) if np.random.randint(2) == 0 else np.arange(4)[::-1]
+                        labels_self.append(1)
+                    obses_t_reshaped[i] = obses_t_reshaped[i][indices]
+                obses_t_self = np.transpose(obses_t_reshaped, (0, 2, 3, 1))
+                labels_self = np.array(labels_self).astype(np.int32)
+                
+                real_fake_train(obses_t_self, labels_self)
+                
+                # for i in range(len(labels_self)) :
+                #     if labels_self[i] == 1 :
+                #         save_image(obses_t_self[i,:,:,0],"real0.png")
+                #         save_image(obses_t_self[i,:,:,1],"real1.png")
+                #         save_image(obses_t_self[i,:,:,2],"real2.png")
+                #         save_image(obses_t_self[i,:,:,3],"real3.png")
+                #         break
+                # for i in range(len(labels_self)) :
+                #     if labels_self[i] == 0 :
+                #         save_image(obses_t_self[i,:,:,0],"fake0.png")
+                #         save_image(obses_t_self[i,:,:,1],"fake1.png")
+                #         save_image(obses_t_self[i,:,:,2],"fake2.png")
+                #         save_image(obses_t_self[i,:,:,3],"fake3.png")
+                #         break
+
+                # print(obses_t_self.shape)
+                # print(labels_self.shape)
+                # break
                 if prioritized_replay:
                     new_priorities = np.abs(td_errors) + prioritized_replay_eps
                     replay_buffer.update_priorities(batch_idxes, new_priorities)
@@ -314,6 +357,12 @@ def learn(env,
                 logger.record_tabular("mean 100 episode reward", mean_100ep_reward)
                 logger.record_tabular("% time spent exploring", int(100 * exploration.value(t)))
                 logger.dump_tabular()
+            # if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
+            #     logger.record_tabular("steps", t)
+            #     logger.record_tabular("episodes", num_episodes)
+            #     logger.record_tabular("mean 100 episode reward", mean_100ep_reward)
+            #     logger.record_tabular("% time spent exploring", int(100 * exploration.value(t)))
+            #     logger.dump_tabular()
 
             if (checkpoint_freq is not None and t > learning_starts and
                     num_episodes > 100 and t % checkpoint_freq == 0):
