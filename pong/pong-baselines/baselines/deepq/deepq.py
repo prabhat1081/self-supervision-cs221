@@ -95,6 +95,52 @@ def load_act(path):
     """
     return ActWrapper.load_act(path)
 
+def save_images(images, save_dir) :
+    if not os.path.exists(save_dir) :
+        os.makedirs(save_dir)
+    for i in range(min(len(images), 16)) :
+        save_image(images[i], os.path.join(save_dir, str(i)+".png"))
+
+def visualize(image, percentile = 95.0) :
+    image_2d = np.abs(image)
+    vmax = np.reshape(np.percentile(image_2d, percentile, axis = (1, 2)), [-1, 1, 1])
+    vmin = np.reshape(np.min(image_2d, axis = (1,2)), [-1, 1, 1])
+    den1 = (vmax - vmin)
+    den2 = np.ones(den1.shape)*1e-7
+    denominator =  (den1 == 0.0)*den2 + (den1 !=0.0)*den1
+    return np.clip((image_2d - vmin) / denominator, 0, 1)
+
+def visualize_grads(prioritized_replay, replay_buffer, batch_size, beta_schedule, t, get_grads) :
+    if prioritized_replay:
+        experience = replay_buffer.sample(batch_size, beta=beta_schedule.value(t))
+        (obses_t, actions, rewards, obses_tp1, dones, weights, batch_idxes) = experience
+    else:
+        obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
+        weights, batch_idxes = np.ones_like(rewards), None
+    
+    query = obses_t    
+    attr = np.zeros_like(obses_t).astype(np.float32)
+    stdev = 0.05 * (np.max(query) - np.min(query))
+    x = query
+    nsamples = 20
+    for j in range(nsamples) :
+        noise = np.random.normal(0, stdev, query.shape)
+        x_plus_noise = x + noise
+        grad_val = get_grads(x_plus_noise)
+        attr += (grad_val * grad_val)
+    final_attr = attr/nsamples
+    final_attr = np.transpose(final_attr, (0, 3, 1, 2))
+    final_attr = np.reshape(final_attr, [-1, 84, 84])
+
+    final_attr = visualize(final_attr)
+    final_attr *= (final_attr == 1.0)
+    obses_t = np.transpose(obses_t, (0, 3, 1, 2))
+    obses_t = np.reshape(obses_t, [-1, 84, 84])
+    print(np.min(final_attr), np.max(final_attr))
+    final_img = obses_t * final_attr
+    print(np.min(final_img), np.max(final_img))
+    save_images(final_img, save_dir = "images")
+    save_images(obses_t, save_dir = "orig_images")
 
 def learn(env,
           network,
@@ -202,11 +248,12 @@ def learn(env,
     def make_obs_ph(name):
         return ObservationInput(observation_space, name=name)
 
-    act, train, update_target, debug, real_fake_train = deepq.build_train(
+    act, train, update_target, debug, real_fake_train,get_grads = deepq.build_train(
         make_obs_ph=make_obs_ph,
         q_func=q_func,
         num_actions=env.action_space.n,
         optimizer=tf.train.AdamOptimizer(learning_rate=lr),
+        real_fake_optimizer = tf.train.AdamOptimizer(learning_rate=1e-4),
         gamma=gamma,
         grad_norm_clipping=10,
         param_noise=param_noise
@@ -259,7 +306,7 @@ def learn(env,
             load_variables(load_path)
             logger.log('Loaded model from {}'.format(load_path))
 
-
+        real_fake_errors = []
         for t in range(total_timesteps):
             if callback is not None:
                 if callback(locals(), globals()):
@@ -293,7 +340,11 @@ def learn(env,
                 obs = env.reset()
                 episode_rewards.append(0.0)
                 reset = True
-
+            
+            if t > 10 * batch_size :
+                visualize_grads(prioritized_replay, replay_buffer, batch_size, beta_schedule, t, get_grads)
+                visualize_grads(prioritized_replay, replay_buffer, batch_size, beta_schedule, t, get_grads)
+                break 
             if t > learning_starts and t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
                 if prioritized_replay:
@@ -302,49 +353,38 @@ def learn(env,
                 else:
                     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
                     weights, batch_idxes = np.ones_like(rewards), None
-
+                #td_errors = 0.0
                 td_errors = train(obses_t, actions, rewards, obses_tp1, dones, weights)
                 
-                obses_t_reshaped = np.array(np.transpose(obses_t, (0, 3, 1, 2)), copy = False)
-                labels_self = []
-                for i in range(len(obses_t_reshaped)) :
-                    if i %2 == 0 :
-                        indices = np.random.permutation(4)
-                        if (indices == np.arange(4)).all() or (indices == np.arange(4)[::-1]).all():
-                            labels_self.append(1)
-                        else :
-                            labels_self.append(0)
-                    else :
-                        indices = np.arange(4) if np.random.randint(2) == 0 else np.arange(4)[::-1]
-                        labels_self.append(1)
-                    obses_t_reshaped[i] = obses_t_reshaped[i][indices]
-                obses_t_self = np.transpose(obses_t_reshaped, (0, 2, 3, 1))
-                labels_self = np.array(labels_self).astype(np.int32)
+                #obses_t_reshaped = np.array(np.transpose(obses_t, (0, 3, 1, 2)), copy = False)
+                #labels_self = []
+                #for i in range(len(obses_t_reshaped)) :
+                #    if i %2 == 0 :
+                #        indices = np.random.permutation(4)
+                #        if (indices == np.arange(4)).all() or (indices == np.arange(4)[::-1]).all():
+                #            labels_self.append(1)
+                #        else :
+                #            labels_self.append(0)
+                #    else :
+                #        indices = np.arange(4) if np.random.randint(2) == 0 else np.arange(4)[::-1]
+                #        labels_self.append(1)
+                #    obses_t_reshaped[i] = obses_t_reshaped[i][indices]
                 
-                real_fake_train(obses_t_self, labels_self)
-                
-                # for i in range(len(labels_self)) :
-                #     if labels_self[i] == 1 :
-                #         save_image(obses_t_self[i,:,:,0],"real0.png")
-                #         save_image(obses_t_self[i,:,:,1],"real1.png")
-                #         save_image(obses_t_self[i,:,:,2],"real2.png")
-                #         save_image(obses_t_self[i,:,:,3],"real3.png")
-                #         break
-                # for i in range(len(labels_self)) :
-                #     if labels_self[i] == 0 :
-                #         save_image(obses_t_self[i,:,:,0],"fake0.png")
-                #         save_image(obses_t_self[i,:,:,1],"fake1.png")
-                #         save_image(obses_t_self[i,:,:,2],"fake2.png")
-                #         save_image(obses_t_self[i,:,:,3],"fake3.png")
-                #         break
-
-                # print(obses_t_self.shape)
-                # print(labels_self.shape)
-                # break
                 if prioritized_replay:
                     new_priorities = np.abs(td_errors) + prioritized_replay_eps
                     replay_buffer.update_priorities(batch_idxes, new_priorities)
 
+                #obses_t_reshaped = np.array(np.transpose(obses_t, (0, 3, 1, 2)), copy = False)
+                #labels_self = []
+                #indices = [[0,1,2,3],[3,2,1,0],[0,2,1,3],[3,1,2,0],[0,3,2,1],[1,2,3,0],[1,3,0,2],[2,0,3,1],[2,3,1,0],[0,1,3,2],[1,3,2,0],[0,2,3,1]] 
+                #for i in range(len(obses_t_reshaped)) :
+                #    idx = np.random.randint(len(indices))
+                #    labels_self.append(idx/2)
+                #    obses_t_reshaped[i] = obses_t_reshaped[i][indices[idx]]
+                #obses_t_self = np.transpose(obses_t_reshaped, (0, 2, 3, 1))
+                #labels_self = np.array(labels_self).astype(np.int32)
+                #real_fake_error = real_fake_train(obses_t_self, labels_self)
+                #real_fake_errors.append(real_fake_error) 
             if t > learning_starts and t % target_network_update_freq == 0:
                 # Update target network periodically.
                 update_target()
@@ -353,10 +393,12 @@ def learn(env,
             num_episodes = len(episode_rewards)
             if done :
                 logger.record_tabular("steps", t)
+                logger.record_tabular("real fake mean error ", np.mean(real_fake_errors))
                 logger.record_tabular("episodes", num_episodes)
                 logger.record_tabular("mean 100 episode reward", mean_100ep_reward)
                 logger.record_tabular("% time spent exploring", int(100 * exploration.value(t)))
                 logger.dump_tabular()
+                real_fake_errors = []
             # if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
             #     logger.record_tabular("steps", t)
             #     logger.record_tabular("episodes", num_episodes)

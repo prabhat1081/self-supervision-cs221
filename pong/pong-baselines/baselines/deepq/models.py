@@ -24,7 +24,7 @@ def build_q_func(network, hiddens=[256], dueling=True, layer_norm=False, **netwo
                     if layer_norm:
                         action_out = layers.layer_norm(action_out, center=True, scale=True)
                     action_out = tf.nn.relu(action_out)
-                real_fake_scores = layers.fully_connected(action_out, num_outputs = 2, activation_fn = None)
+                real_fake_scores = layers.fully_connected(action_out, num_outputs = 4, activation_fn = None)
                 action_scores = layers.fully_connected(action_out, num_outputs=num_actions, activation_fn=None)
 
             if dueling:

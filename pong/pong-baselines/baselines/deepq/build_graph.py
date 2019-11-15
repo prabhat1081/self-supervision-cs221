@@ -314,7 +314,7 @@ def build_act_with_param_noise(make_obs_ph, q_func, num_actions, scope="deepq", 
         return act
 
 
-def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=None, gamma=1.0,
+def build_train(make_obs_ph, q_func, num_actions, optimizer, real_fake_optimizer, grad_norm_clipping=None, gamma=1.0,
     double_q=True, scope="deepq", reuse=None, param_noise=False, param_noise_filter_func=None):
     """Creates the train function:
 
@@ -415,6 +415,9 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         real_fake_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits = real_fake_logits, labels = real_fake_label)
         weighted_error = tf.reduce_mean(importance_weights_ph * errors)
         real_fake_error = tf.reduce_mean(real_fake_loss)
+        
+
+        img_grad, = tf.gradients(real_fake_logits, obs_t_input.get())
 
         # compute optimization op (potentially with gradient clipping)
         if grad_norm_clipping is not None:
@@ -426,7 +429,19 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         else:
             optimize_expr = optimizer.minimize(weighted_error, var_list=q_func_vars)
 
-        real_fake_optimizer_expr = optimizer.minimize(real_fake_error, var_list = q_func_vars)
+        if grad_norm_clipping is not None:
+            real_fake_gradients = real_fake_optimizer.compute_gradients(real_fake_error, var_list=q_func_vars)
+            print("the len of real fake gradients is ", len(real_fake_gradients))
+            c = 0
+            for i, (grad, var) in enumerate(real_fake_gradients):
+                if grad is not None:
+                    real_fake_gradients[i] = (tf.clip_by_norm(grad, grad_norm_clipping), var)
+                c += 1
+            print("total optimizer variables are ", c)
+            real_fake_optimizer_expr = real_fake_optimizer.apply_gradients(real_fake_gradients)
+        else:
+            real_fake_optimizer_expr = real_fake_optimizer.minimize(real_fake_error, var_list = q_func_vars)
+        #real_fake_optimizer_exp = real_fake_optimizer.minimize(real_fake_error, var_list = q_func_vars)
 
         # update_target_fn will be called periodically to copy Q network to target Q network
         update_target_expr = []
@@ -456,9 +471,9 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             outputs=real_fake_error,
             updates=[real_fake_optimizer_expr]
         )
-
+        get_grad = U.function(inputs = [obs_t_input], outputs = img_grad)
         update_target = U.function([], [], updates=[update_target_expr])
 
         q_values = U.function([obs_t_input], q_t)
 
-        return act_f, train, update_target, {'q_values': q_values}, real_fake_train
+        return act_f, train, update_target, {'q_values': q_values}, real_fake_train, get_grad
