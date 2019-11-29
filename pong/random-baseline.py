@@ -1,7 +1,10 @@
 import gym
+import sys
 
-def main():
-    env = gym.make('Pong-v0')
+def main(args):
+    game = args[0]
+    env = gym.make(game)
+    print("Game: "+game)
     rewards = []
     for i_episode in range(100):
         observation = env.reset()
@@ -14,7 +17,7 @@ def main():
             observation, reward, done, info = env.step(action)
             tot_reward += reward
             if done:
-                print("Episode finished after {} timesteps".format(t+1), tot_reward)
+                print("Episode {} finished after {} timesteps".format(i_episode, t+1), tot_reward)
                 break
             t += 1
         rewards.append(tot_reward)
@@ -22,4 +25,4 @@ def main():
     env.close()
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
