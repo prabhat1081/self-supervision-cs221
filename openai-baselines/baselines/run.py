@@ -93,7 +93,7 @@ def build_env(args):
     env_type, env_id = get_env_type(args)
 
     if env_type in {'atari', 'retro'}:
-        if alg == 'deepq':
+        if alg == 'deepq' or alg == 'deepq_self_supervised':
             env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True})
         elif alg == 'trpo_mpi':
             env = make_env(env_id, env_type, seed=seed)
