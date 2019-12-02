@@ -27,7 +27,12 @@ def build_q_func(network, hiddens=[256], dueling=True, layer_norm=False, supervi
                 action_scores = layers.fully_connected(action_out, num_outputs=num_actions, activation_fn=None)
             
             with tf.variable_scope("self_supervision_task"):
-                supervision_task_out = action_out
+                supervision_task_out = latent
+                for hidden in hiddens:
+                    supervision_task_out = layers.fully_connected(supervision_task_out, num_outputs=hidden, activation_fn=None)
+                    if layer_norm:
+                        supervision_task_out = layers.layer_norm(supervision_task_out, center=True, scale=True)
+                    supervision_task_out = tf.nn.relu(supervision_task_out)
                 supervision_out = layers.fully_connected(supervision_task_out, num_outputs=supervised_num_classes, activation_fn = None)
 
             if dueling:
