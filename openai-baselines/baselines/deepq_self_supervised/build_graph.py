@@ -475,4 +475,6 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, supervised_task_opt
 
         q_values = U.function([obs_t_input], q_t)
 
-        return act_f, train, update_target, {'q_values': q_values}, supervised_task_train, get_grad
+        supervised_task_logits = U.function([obs_t_input], supervised_task_logits)
+
+        return act_f, train, update_target, {'q_values': q_values, 'supervised_task_logits': supervised_task_logits}, supervised_task_train, get_grad

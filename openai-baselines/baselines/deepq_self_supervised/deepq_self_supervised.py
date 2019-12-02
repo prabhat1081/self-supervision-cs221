@@ -169,6 +169,7 @@ def learn(env,
           param_noise=False,
           callback=None,
           load_path=None,
+          debug=False,
           **network_kwargs
             ):
     """Train a deepq model.
@@ -400,6 +401,9 @@ def learn(env,
                     obses_t_self = np.transpose(obses_t_reshaped, (0, 2, 3, 1))
                     supervised_task_labels = np.array(supervised_task_labels).astype(np.int32)
                     supervised_task_error = supervised_task_train(obses_t_self, supervised_task_labels)
+                    if(debug):
+                        print(supervised_task_labels)
+                        print(debug['supervised_task_logits'](obses_t_self))
                     supervised_task_errors.append(supervised_task_error) 
             if t > learning_starts and t % target_network_update_freq == 0:
                 # Update target network periodically.
