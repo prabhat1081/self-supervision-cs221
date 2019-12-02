@@ -146,6 +146,7 @@ def learn(env,
           network,
           train_deepq=True,
           train_supervised_task=True,
+          supervised_task="sequence",
           seed=None,
           lr=5e-4,
           total_timesteps=100000,
@@ -244,7 +245,14 @@ def learn(env,
     sess = get_session()
     set_global_seeds(seed)
 
-    q_func = build_q_func(network, supervised_num_classes=6, **network_kwargs)
+    if(supervised_task=="rotation"):
+        supervised_num_classes = 4
+    elif(supervised_task=='sequence'):
+        supervised_num_classes = 6
+    else:
+        raise ValueError("Invalid value for supervised task " + supervised_task)
+
+    q_func = build_q_func(network, supervised_num_classes=supervised_num_classes, **network_kwargs)
 
     # capture the shape outside the closure so that the env object is not serialized
     # by cloudpickle when serializing make_obs_ph
@@ -367,21 +375,31 @@ def learn(env,
                         replay_buffer.update_priorities(batch_idxes, new_priorities)
                 
                 if(train_supervised_task):
-                    obses_t_reshaped = np.array(np.transpose(obses_t, (0, 3, 1, 2)), copy = False)
-                    supervised_task_labels = []
-                    indices = [ [0,1,2,3], [3,2,1,0],
-                                [0,2,1,3], [3,1,2,0],
-                                [0,3,2,1], [1,2,3,0],
-                                [1,3,0,2], [2,0,3,1],
-                                [2,3,1,0], [0,1,3,2],
-                                [1,3,2,0], [0,2,3,1]
-                            ] 
-                    for i in range(len(obses_t_reshaped)) :
-                        idx = np.random.randint(len(indices))
-                        supervised_task_labels.append(idx/2)
-                        obses_t_reshaped[i] = obses_t_reshaped[i][indices[idx]]
-                    obses_t_self = np.transpose(obses_t_reshaped, (0, 2, 3, 1))
-                    supervised_task_labels = np.array(supervised_task_labels).astype(np.int32)
+                    if(supervised_task=='sequence'):
+                        obses_t_reshaped = np.array(np.transpose(obses_t, (0, 3, 1, 2)), copy = False)
+                        supervised_task_labels = []
+                        indices = [ [0,1,2,3], [3,2,1,0],
+                                    [0,2,1,3], [3,1,2,0],
+                                    [0,3,2,1], [1,2,3,0],
+                                    [1,3,0,2], [2,0,3,1],
+                                    [2,3,1,0], [0,1,3,2],
+                                    [1,3,2,0], [0,2,3,1]
+                                ]
+                        for i in range(len(obses_t_reshaped)) :
+                            idx = np.random.randint(len(indices))
+                            supervised_task_labels.append(idx/2)
+                            obses_t_reshaped[i] = obses_t_reshaped[i][indices[idx]]
+                        obses_t_self = np.transpose(obses_t_reshaped, (0, 2, 3, 1))
+                        supervised_task_labels = np.array(supervised_task_labels).astype(np.int32)
+                    elif(supervised_task=='rotation'):
+                        supervised_task_labels = []
+                        transformations = [0, 1, 2, 3]
+                        for i in range(len(obses_t)) :
+                            idx = np.random.randint(len(transformations))
+                            supervised_task_labels.append(idx)
+                            obses_t[i] = tf.image.rot90(obses_t[i], k=idx)
+                        obses_t_self = obses_t
+                        supervised_task_labels = np.array(supervised_task_labels).astype(np.int32)
                     supervised_task_error = supervised_task_train(obses_t_self, supervised_task_labels)
                     supervised_task_errors.append(supervised_task_error) 
             if t > learning_starts and t % target_network_update_freq == 0:
@@ -401,7 +419,7 @@ def learn(env,
 
             if (checkpoint_freq is not None and t > learning_starts and
                     num_episodes > 100 and t % checkpoint_freq == 0):
-                if saved_mean_reward is None or mean_100ep_reward > saved_mean_reward:
+                if saved_mean_reward is None or mean_100ep_reward >= saved_mean_reward:
                     if print_freq is not None:
                         logger.log("Saving model due to mean reward increase: {} -> {}".format(
                                    saved_mean_reward, mean_100ep_reward))
