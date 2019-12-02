@@ -375,9 +375,9 @@ def learn(env,
                         replay_buffer.update_priorities(batch_idxes, new_priorities)
                 
                 if(train_supervised_task):
+                    obses_t_reshaped = np.array(np.transpose(obses_t, (0, 3, 1, 2)), copy = False)
+                    supervised_task_labels = []
                     if(supervised_task=='sequence'):
-                        obses_t_reshaped = np.array(np.transpose(obses_t, (0, 3, 1, 2)), copy = False)
-                        supervised_task_labels = []
                         indices = [ [0,1,2,3], [3,2,1,0],
                                     [0,2,1,3], [3,1,2,0],
                                     [0,3,2,1], [1,2,3,0],
@@ -392,14 +392,13 @@ def learn(env,
                         obses_t_self = np.transpose(obses_t_reshaped, (0, 2, 3, 1))
                         supervised_task_labels = np.array(supervised_task_labels).astype(np.int32)
                     elif(supervised_task=='rotation'):
-                        supervised_task_labels = []
                         transformations = [0, 1, 2, 3]
                         for i in range(len(obses_t)) :
                             idx = np.random.randint(len(transformations))
                             supervised_task_labels.append(idx)
-                            obses_t[i] = tf.image.rot90(obses_t[i], k=idx)
-                        obses_t_self = obses_t
-                        supervised_task_labels = np.array(supervised_task_labels).astype(np.int32)
+                            obses_t_reshaped[i] = np.rot90(obses_t_reshaped[i], k=transformations[idx], axes=(1, 2))
+                    obses_t_self = np.transpose(obses_t_reshaped, (0, 2, 3, 1))
+                    supervised_task_labels = np.array(supervised_task_labels).astype(np.int32)
                     supervised_task_error = supervised_task_train(obses_t_self, supervised_task_labels)
                     supervised_task_errors.append(supervised_task_error) 
             if t > learning_starts and t % target_network_update_freq == 0:
