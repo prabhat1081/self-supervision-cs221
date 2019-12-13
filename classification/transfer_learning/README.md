@@ -1,6 +1,6 @@
 ### Data preparation
 
-1. Download video data from [here] (https://github.com/ondyari/FaceForensics/)
+1. Download video data from [here](https://github.com/ondyari/FaceForensics/)
 
 2. To sample images from video, perform face detection and split data into hard training and validation splits, run the following - 
 ```
