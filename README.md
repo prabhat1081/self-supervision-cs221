@@ -6,4 +6,4 @@ Please follow the README in the corresponding directory for instruction to setup
 
 ### Code for transfer learning experiments is [here](https://github.com/prabhat1081/self-supervision-cs221/tree/master/classification/transfer_learning)
 ### Code for reinforcement learning experiments is [here](https://github.com/prabhat1081/self-supervision-cs221/tree/master/openai-baselines)
-
+### Code for experiments over MNIST is [here](https://github.com/prabhat1081/self-supervision-cs221/tree/master/classification/mnist)
